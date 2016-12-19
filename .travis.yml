@@ -1,0 +1,56 @@
+sudo: required
+language: generic
+
+services:
+- docker
+
+env:
+  global:
+  - TERM=dumb
+  - MAKEFLAGS='--silent -j3'
+
+before_cache:
+  - rm -fv parts/*/state/stage
+  - rm -fv parts/*/state/prime
+
+cache:
+  directories:
+  - parts/ffmpeg/install
+  - parts/ffmpeg/state
+  - parts/gyp/install
+  - parts/gyp/state
+  - parts/libxkbcommon/install
+  - parts/libxkbcommon/state
+  - parts/qt/install
+  - parts/qt/state
+
+install:
+  - docker run --name builder -e TERM -e MAKEFLAGS -v $(pwd):$(pwd) -w $(pwd) -td ubuntu:xenial
+  - docker exec -i builder apt update -qq
+  - docker exec -i builder apt install snapcraft -yq
+
+before_script:
+- test $TRAVIS_BRANCH != master || test $TRAVIS_PULL_REQUEST != false &&
+  sed 's/build-type:.*/build-type:'\ \'Debug\'/ -i snapcraft.yaml &&
+  echo 'Debug' || echo 'Default'
+
+script:
+  - docker exec -i builder snapcraft pull
+
+after_success:
+- openssl aes-256-cbc -K $encrypted_1d36a60557dc_key -iv $encrypted_1d36a60557dc_iv
+  -in .snapcraft/travis_snapcraft.cfg -out .snapcraft/snapcraft.cfg -d
+- git checkout -- snapcraft.yaml
+
+before_deploy:
+  - docker exec -i builder snapcraft clean telegram
+  - travis_wait 60 docker exec -i builder snapcraft
+
+deploy:
+  skip_cleanup: true
+  provider: script
+  script: docker exec -i builder snapcraft push *.snap --release edge
+  on:
+    branch: master
+    # condition: $TRAVIS_PULL_REQUEST = false
+    # tags: true
